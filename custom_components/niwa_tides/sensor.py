@@ -61,19 +61,38 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the NiwaTidesInfo sensor."""
     name = config.get(CONF_NAME)
     entity_id = config[CONF_ENTITY_ID]
+
     lat = config.get(CONF_LATITUDE, hass.config.latitude)
     lon = config.get(CONF_LONGITUDE, hass.config.longitude)
     key = config.get(CONF_API_KEY)
 
     if None in (lat, lon):
         _LOGGER.error("Latitude or longitude not set in Home Assistant config")
+        return
+
+    # 🔧 Normalise float precision for NIWA API
+    try:
+        lat = round(float(lat), 5)
+        lon = round(float(lon), 5)
+    except (TypeError, ValueError):
+        _LOGGER.error("Invalid latitude or longitude values: lat=%s lon=%s", lat, lon)
+        return
+
+        if not (-90 <= lat <= 90):
+            _LOGGER.error("Latitude out of range: %s", lat)
+            return
+
+        if not ((160 <= lon <= 180) or (-180 <= lon <= -175)):
+            _LOGGER.error("Longitude out of range for NIWA tides: %s", lon)
+            return
 
     tides = NiwaTidesInfoSensor(name, entity_id, lat, lon, key)
 
     add_entities([tides])
 
     tides.update()
-    if tides.data == None:
+    if tides.data is None:
+        _LOGGER.error("Unable to retrieve tides data")
         _LOGGER.error("Unable to retrieve tides data")
 
 

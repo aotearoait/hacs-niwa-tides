@@ -1,10 +1,10 @@
 {
   "domain": "niwa_tides",
-  "name": "NIWA Tides",
+  "name": "NIWA Tides 2,0",
   "version": "1.1.3",
-  "documentation": "https://github.com/muxa/home-assistant-niwa-tides",
-  "issue_tracker": "https://github.com/muxa/home-assistant-niwa-tides/issues",
+  "documentation": "https://github.com/aotearoait/hacs-niwa-tides",
+  "issue_tracker": "https://github.com/aotearoait/hacs-niwa-tides/issues",
   "dependencies": [],
-  "codeowners": ["@muxa"],
+  "codeowners": ["@aotearoait"],
   "requirements": []
 }

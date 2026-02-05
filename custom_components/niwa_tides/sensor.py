@@ -43,6 +43,7 @@ ATTR_NEXT_LOW_TIDE_TIME = "next_low_tide_time"
 ATTR_NEXT_LOW_TIDE_HOURS = "next_low_tide_hours"
 ATTR_TIDE_PERCENT = "tide_percent"
 ATTR_TIDE_PHASE = "tide_phase"
+UPCOMING_TIDES = "upcoming_tides"
 
 SCAN_INTERVAL = timedelta(seconds=300) # every 5 minutes
 
@@ -113,6 +114,7 @@ class NiwaTidesInfoSensor(RestoreEntity):
         self.next_tide = None
         self.next_high_tide = None
         self.next_low_tide = None
+        self.upcoming_tides = []
 
     @property
     def name(self):
@@ -160,6 +162,7 @@ class NiwaTidesInfoSensor(RestoreEntity):
             ATTR_NEXT_LOW_TIDE_HOURS: difference_in_hours(self.last_update_at, self.next_low_tide.time) if self.next_low_tide is not None else None,
             ATTR_TIDE_PERCENT: self.tide_percent,
             ATTR_TIDE_PHASE: self.tide_phase
+            UPCOMING_TIDES: self.upcoming_tides
         }
         return attr
 
@@ -178,7 +181,7 @@ class NiwaTidesInfoSensor(RestoreEntity):
             start = datetime.date.fromtimestamp(time.time()).isoformat()
             _LOGGER.info("Fetching tide data for %s", start)
             resource = (
-                "https://api.niwa.co.nz/tides/data?lat={}&long={}&numberOfDays=2&startDate={}"
+                "https://api.niwa.co.nz/tides/data?lat={}&long={}&numberOfDays=7&startDate={}"
             ).format(self._lat, self._lon, start)
 
             try:
@@ -200,6 +203,14 @@ class NiwaTidesInfoSensor(RestoreEntity):
     def calculate_tide(self):
         if self.data:
             t = datetime.datetime.now()
+
+            future = []
+            for v in self.data["values"]:
+                pt = datetime.datetime.strptime(v["time"], "%Y-%m-%dT%H:%M:%SZ") \
+                    .replace(tzinfo=datetime.timezone.utc).astimezone().replace(tzinfo=None)
+                if pt > t:
+                    future.append({"time": pt.isoformat(), "value": round(float(v["value"]), 2)})
+            self.upcoming_tides = future[:14]  # next 14 highs/lows (usually ~3–4 days)
 
             last_tide = None # the time and height of the tide (high or low) immediately preceeding current time
             next_tide = None # the time and height of the tide (high or low) immediately following current time

@@ -79,13 +79,13 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         _LOGGER.error("Invalid latitude or longitude values: lat=%s lon=%s", lat, lon)
         return
 
-        if not (-90 <= lat <= 90):
-            _LOGGER.error("Latitude out of range: %s", lat)
-            return
+    if not (-90 <= lat <= 90):
+        LOGGER.error("Latitude out of range: %s", lat)
+        return
 
-        if not ((160 <= lon <= 180) or (-180 <= lon <= -175)):
-            _LOGGER.error("Longitude out of range for NIWA tides: %s", lon)
-            return
+    if not ((160 <= lon <= 180) or (-180 <= lon <= -175)):
+        _LOGGER.error("Longitude out of range for NIWA tides: %s", lon)
+        return
 
     tides = NiwaTidesInfoSensor(name, entity_id, lat, lon, key)
 
@@ -187,9 +187,14 @@ class NiwaTidesInfoSensor(RestoreEntity):
             ).format(self._lat, self._lon, start)
 
             try:
-                req = requests.get(resource, timeout=10, headers = {"x-apikey": self._key})
-                self.data = req.json()
-                req.close()
+               req = requests.get(resource, timeout=10, headers={"x-apikey": self._key})
+               if req.status_code != 200:
+                   _LOGGER.error("NIWA API error %s: %s", req.status_code, req.text[:300])
+                   self.data = None
+                   return
+
+               self.data = req.json()
+
                 
                 _LOGGER.debug("Data: %s", self.data)
 
@@ -203,7 +208,7 @@ class NiwaTidesInfoSensor(RestoreEntity):
             self.calculate_tide()
 
     def calculate_tide(self):
-        if self.data:
+        if self.data and "values" in self.data:
             t = datetime.datetime.now()
 
             future = []

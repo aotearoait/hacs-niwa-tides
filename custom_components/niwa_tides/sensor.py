@@ -115,6 +115,8 @@ class NiwaTidesInfoSensor(RestoreEntity):
         self.next_high_tide = None
         self.next_low_tide = None
         self.upcoming_tides = []
+        self.last_update_at = None
+
 
     @property
     def name(self):

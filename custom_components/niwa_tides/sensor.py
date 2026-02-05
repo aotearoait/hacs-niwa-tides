@@ -161,7 +161,7 @@ class NiwaTidesInfoSensor(RestoreEntity):
             ATTR_NEXT_LOW_TIDE_TIME: self.next_low_tide.time if self.next_low_tide is not None else None,
             ATTR_NEXT_LOW_TIDE_HOURS: difference_in_hours(self.last_update_at, self.next_low_tide.time) if self.next_low_tide is not None else None,
             ATTR_TIDE_PERCENT: self.tide_percent,
-            ATTR_TIDE_PHASE: self.tide_phase
+            ATTR_TIDE_PHASE: self.tide_phase,
             UPCOMING_TIDES: self.upcoming_tides
         }
         return attr

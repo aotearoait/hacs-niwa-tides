@@ -20,7 +20,6 @@ from homeassistant.const import (
     UnitOfLength
 )
 import homeassistant.helpers.config_validation as cv
-# from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,7 +44,7 @@ ATTR_TIDE_PERCENT = "tide_percent"
 ATTR_TIDE_PHASE = "tide_phase"
 UPCOMING_TIDES = "upcoming_tides"
 
-SCAN_INTERVAL = timedelta(seconds=300) # every 5 minutes
+SCAN_INTERVAL = timedelta(seconds=300)  # every 5 minutes
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
@@ -71,7 +70,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         _LOGGER.error("Latitude or longitude not set in Home Assistant config")
         return
 
-    # 🔧 Normalise float precision for NIWA API
+    # Normalise float precision for NIWA API
     try:
         lat = round(float(lat), 5)
         lon = round(float(lon), 5)
@@ -83,7 +82,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
         _LOGGER.error("Latitude out of range: %s", lat)
         return
 
-    if not ((160 <= lon <= 180) or (-180 <= lon <= -175)):
+    # Fixed: NZ longitude range (165°E to 179°E typically)
+    if not (165 <= lon <= 180 or -180 <= lon <= -175):
         _LOGGER.error("Longitude out of range for NIWA tides: %s", lon)
         return
 
@@ -93,7 +93,6 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
     tides.update()
     if tides.data is None:
-        _LOGGER.error("Unable to retrieve tides data")
         _LOGGER.error("Unable to retrieve tides data")
 
 
@@ -109,6 +108,7 @@ class NiwaTidesInfoSensor(RestoreEntity):
         self._key = key
         self.data = None
         self.tide_percent = None
+        self.tide_phase = None  # Added missing initialization
         self.current_tide_level = None
         self.last_tide = None
         self.next_tide = None
@@ -116,7 +116,6 @@ class NiwaTidesInfoSensor(RestoreEntity):
         self.next_low_tide = None
         self.upcoming_tides = []
         self.last_update_at = None
-
 
     @property
     def name(self):
@@ -131,12 +130,13 @@ class NiwaTidesInfoSensor(RestoreEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self.data != None
+        return self.data is not None
 
     @property
     def icon(self):
         """Return sensor icon."""
         return ICON
+
     @property
     def unit_of_measurement(self):
         """Return the unit of measurement."""
@@ -145,7 +145,7 @@ class NiwaTidesInfoSensor(RestoreEntity):
     @property
     def extra_state_attributes(self):
         """Return the state attributes of this device."""
-        if self.last_update_at == None:
+        if self.last_update_at is None:
             self.last_update_at = datetime.datetime.now()
 
         attr = {
@@ -172,14 +172,14 @@ class NiwaTidesInfoSensor(RestoreEntity):
     def state(self):
         """Return the state of the device."""
         return self.current_tide_level
-        
+
     def update(self):
         """Get the latest data from NIWA Tides API or calculate."""
 
         self.last_update_at = datetime.datetime.now()
 
-        if self.data == None or self.next_tide == None or datetime.datetime.now() > self.next_tide.time:
-            # never updated, or it's time to get next tide info            
+        if self.data is None or self.next_tide is None or datetime.datetime.now() > self.next_tide.time:
+            # never updated, or it's time to get next tide info
             start = datetime.date.fromtimestamp(time.time()).isoformat()
             _LOGGER.info("Fetching tide data for %s", start)
             resource = (
@@ -203,6 +203,9 @@ class NiwaTidesInfoSensor(RestoreEntity):
                 _LOGGER.error("Error retrieving data from NIWA tides API: %s", err.args)
                 _LOGGER.debug("Response (%s): %s", req.status_code, req.text)
                 self.data = None
+            except Exception as err:
+                _LOGGER.error("Unexpected error retrieving data from NIWA tides API: %s", err)
+                self.data = None
             finally:
                 try:
                     req.close()
@@ -223,68 +226,77 @@ class NiwaTidesInfoSensor(RestoreEntity):
                     .replace(tzinfo=datetime.timezone.utc).astimezone().replace(tzinfo=None)
                 if pt > t:
                     future.append({"time": pt.isoformat(), "value": round(float(v["value"]), 2)})
-            self.upcoming_tides = future[:14]  # next 14 highs/lows (usually ~3–4 days)
+            self.upcoming_tides = future[:14]  # next 14 highs/lows (usually ~3-4 days)
 
-            last_tide = None # the time and height of the tide (high or low) immediately preceeding current time
-            next_tide = None # the time and height of the tide (high or low) immediately following current time
-            next_high_tide = None # the time and height of the high tide immediately following current time
-            next_low_tide = None # the time and height of the low tide immediately following current time
+            last_tide = None  # the time and height of the tide (high or low) immediately preceding current time
+            next_tide = None  # the time and height of the tide (high or low) immediately following current time
+            next_high_tide = None  # the time and height of the high tide immediately following current time
+            next_low_tide = None  # the time and height of the low tide immediately following current time
 
             for value in self.data["values"]:
-                # parse date and convert from UTC to local                
+                # parse date and convert from UTC to local
                 parsed_time = datetime.datetime.strptime(value["time"], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc).astimezone().replace(tzinfo=None)
-                if next_tide == None:
+                if next_tide is None:
                     # we have not found next tide yet
                     if parsed_time > t:
                         # we found next tide
                         next_tide = TideInfo(parsed_time, value["value"])
 
-                        if next_tide.value > last_tide.value:
-                            # next tide is high
-                            next_high_tide = next_tide
-                        else:
-                            # next tide is low
-                            next_low_tide = next_tide
+                        # Fixed: Check if last_tide exists before accessing its value
+                        if last_tide is not None:
+                            if next_tide.value > last_tide.value:
+                                # next tide is high
+                                next_high_tide = next_tide
+                            else:
+                                # next tide is low
+                                next_low_tide = next_tide
                     else:
                         # this might be the last tide
                         last_tide = TideInfo(parsed_time, value["value"])
                 else:
                     # this is the tide following next one
                     # figure out if it will be high or low
-                    if next_high_tide == None:
+                    if next_high_tide is None:
                         next_high_tide = TideInfo(parsed_time, value["value"])
                     else:
                         next_low_tide = TideInfo(parsed_time, value["value"])
                     # we are done
                     break
 
-            # now can calculate current level
-            tide_ratio = (1-math.cos(math.pi*(t-last_tide.time)/(next_tide.time-last_tide.time)))/2
-            h = last_tide.value + (next_tide.value - last_tide.value)*tide_ratio
-            h = round(h, 2)
+            # Fixed: Ensure we have both last_tide and next_tide before calculating
+            if last_tide is not None and next_tide is not None:
+                # now can calculate current level
+                tide_ratio = (1-math.cos(math.pi*(t-last_tide.time)/(next_tide.time-last_tide.time)))/2
+                h = last_tide.value + (next_tide.value - last_tide.value)*tide_ratio
+                h = round(h, 2)
 
-            _LOGGER.debug("Current tide: %s. Last tide: %s. Next tide: %s", h, last_tide, next_tide)
-            _LOGGER.debug("Next high tide: %s. Next low tide: %s", next_high_tide, next_low_tide)
+                _LOGGER.debug("Current tide: %s. Last tide: %s. Next tide: %s", h, last_tide, next_tide)
+                _LOGGER.debug("Next high tide: %s. Next low tide: %s", next_high_tide, next_low_tide)
 
-            if last_tide.value > next_tide.value:
-                # tide is decreasing
-                tide_ratio = 1 - tide_ratio
+                if last_tide.value > next_tide.value:
+                    # tide is decreasing
+                    tide_ratio = 1 - tide_ratio
 
-            self.tide_percent = round(tide_ratio * 100, 0)
-            self.current_tide_level = h
-            self.last_tide = last_tide
-            self.next_tide = next_tide
-            self.next_high_tide = next_high_tide
-            self.next_low_tide = next_low_tide
+                self.tide_percent = round(tide_ratio * 100, 0)
+                self.current_tide_level = h
+                self.last_tide = last_tide
+                self.next_tide = next_tide
+                self.next_high_tide = next_high_tide
+                self.next_low_tide = next_low_tide
 
-            if self.tide_percent < 5:
-                self.tide_phase = "low"
-            elif self.tide_percent > 95:
-                self.tide_phase = "high"
-            elif last_tide.value < next_tide.value:
-                self.tide_phase = "increasing"
+                if self.tide_percent < 5:
+                    self.tide_phase = "low"
+                elif self.tide_percent > 95:
+                    self.tide_phase = "high"
+                elif last_tide.value < next_tide.value:
+                    self.tide_phase = "increasing"
+                else:
+                    self.tide_phase = "decreasing"
             else:
-                self.tide_phase = "decreasing"
+                _LOGGER.warning("Could not determine last_tide and next_tide")
+                self.tide_percent = None
+                self.current_tide_level = None
+                self.tide_phase = None
 
         else:
             self.tide_percent = None
@@ -293,6 +305,8 @@ class NiwaTidesInfoSensor(RestoreEntity):
             self.next_tide = None
             self.next_high_tide = None
             self.next_low_tide = None
+            self.tide_phase = None
+
 
 class TideInfo:
     def __init__(self, time: datetime.datetime, value: float):
@@ -303,6 +317,6 @@ class TideInfo:
         return f'{self.value}m at {self.time}'
 
 
-def difference_in_hours(earlier_time, later_time):        
+def difference_in_hours(earlier_time, later_time):
     diff = later_time - earlier_time
     return round(diff.days*24 + diff.seconds/3600, 1)
